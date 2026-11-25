@@ -1,59 +1,75 @@
-#!/usr/bin/env python3
-"""Deliver the 25 November 2026 front page to the harness output folder.
+"""Entry point for the news-image-20261125 bounty.
 
-The picture itself is rendered ahead of time by render.py and shipped in
-this repository as entry.png. This entrypoint does no drawing and needs
-no network: it copies that file into MAKEFUN_OUTPUT_DIR (or /output)
-and checks the copy byte for byte, so the two grading runs produce
-identical bytes. It bails out when the picture is missing or over the
-1 MiB gate.
+Renders the front page with render.py and writes it to entry.png next
+to this file and to the output directory (MAKEFUN_OUTPUT_DIR, or
+/output by default). Exits non-zero unless both copies are
+byte-identical and 1024x1024.
+
+Usage:
+    python3 main.py
+    MAKEFUN_OUTPUT_DIR=out python3 main.py
 """
-
-from __future__ import annotations
 
 import hashlib
 import os
-import pathlib
 import sys
 
-SOURCE_NAME = "entry.png"
-SIZE_LIMIT = 1_048_576
-READ_SIZE = 65_536
+import render
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ENTRY = "entry.png"
 
 
-def digest(path: pathlib.Path) -> str:
-    """SHA-256 of a file, read in blocks."""
-    hasher = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(READ_SIZE), b""):
-            hasher.update(block)
-    return hasher.hexdigest()
+def sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
-def main() -> int:
-    repo_root = pathlib.Path(__file__).resolve().parent
-    picture = repo_root / SOURCE_NAME
-    if not picture.exists():
-        print(f"no picture shipped: {picture}", file=sys.stderr)
+def verify_png(path):
+    """Re-open the file and confirm it decodes as a 1024x1024 RGB PNG."""
+    from PIL import Image
+    with Image.open(path) as im:
+        im.load()
+        if im.size != (render.W, render.H) or im.mode != "RGB":
+            raise ValueError(f"{path}: bad image {im.size} {im.mode}")
+    return True
+
+
+def main():
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+    os.makedirs(out_dir, exist_ok=True)
+
+    image = render.build()
+    if image.size != (render.W, render.H):
+        print(f"bad size: {image.size}", file=sys.stderr)
         return 1
-    if picture.stat().st_size > SIZE_LIMIT:
-        print(f"picture over 1 MiB: {picture}", file=sys.stderr)
+
+    local_path = os.path.join(HERE, ENTRY)
+    image.save(local_path, "PNG")
+    out_path = os.path.join(out_dir, ENTRY)
+    image.save(out_path, "PNG")
+
+    local_hash = sha256_of(local_path)
+    out_hash = sha256_of(out_path)
+    if local_hash != out_hash:
+        print("copies differ!", file=sys.stderr)
+        return 1
+    verify_png(local_path)
+    verify_png(out_path)
+
+    size = os.path.getsize(local_path)
+    if size > 1024 * 1024:
+        print(f"entry.png too big: {size} bytes", file=sys.stderr)
         return 1
 
-    destination_dir = pathlib.Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    destination = destination_dir / SOURCE_NAME
-    destination.write_bytes(picture.read_bytes())
-
-    source_hash = digest(picture)
-    if digest(destination) != source_hash:
-        print("output copy does not match the shipped picture",
-              file=sys.stderr)
-        return 1
-    print(f"wrote {destination} sha256={source_hash} "
-          f"bytes={destination.stat().st_size}")
+    print(f"entry.png {image.size[0]}x{image.size[1]} "
+          f"{size} bytes sha256={local_hash}")
+    print(f"wrote {local_path} and {out_path}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

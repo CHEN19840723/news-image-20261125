@@ -1,185 +1,179 @@
-#!/usr/bin/env python3
-"""Draw the 25 November 2026 front page (1024x1024 PNG).
+"""Draw the 25 November 2026 front page (1024x1024) with Pillow.
 
-Fresh build for make.fun news-image-20261125. Every fact on the page was
-checked against a real source on Wednesday morning, 25 November 2026; see
-BUILD_NOTES.md for the sources. Draws a newspaper front page with PIL
-only — no network, no photographs, no copied artwork.
+No network, no randomness: the same run always produces the same PNG.
+Run directly (`python3 render.py`) to write entry.png next to this file.
 """
 
 from PIL import Image, ImageDraw, ImageFont
 
-CANVAS = (1024, 1024)
-NEWS = (250, 246, 238)      # newsprint
-INK = (22, 22, 22)
-SCARLET = (172, 30, 32)
-NAVY = (18, 33, 61)
-STEEL = (84, 96, 116)
-MIST = (226, 231, 238)
-RULE = (196, 188, 172)
-WHITE = (255, 255, 255)
-GOLD = (198, 142, 32)
+W, H = 1024, 1024
 
-FONT_DIR = "/usr/share/fonts/truetype/noto/"
+NAVY = (22, 35, 63)
+NAVY_LIGHT = (31, 48, 84)
+RED = (178, 34, 34)
+CREAM = (247, 243, 232)
+INK = (24, 24, 24)
+GREY = (90, 90, 90)
+STRIP_BG = (232, 238, 246)
+GOLD = (232, 164, 32)
 
-
-def load(name, size):
-    return ImageFont.truetype(FONT_DIR + name, size)
-
-
-SERIF_XB = lambda s: load("NotoSerif-Black.ttf", s)
-SERIF_B = lambda s: load("NotoSerif-Bold.ttf", s)
-SANS_XB = lambda s: load("NotoSans-Black.ttf", s)
-SANS_B = lambda s: load("NotoSans-Bold.ttf", s)
-SANS = lambda s: load("NotoSans-Regular.ttf", s)
+SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
+SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+SANS_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+SANS_ITALIC = "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf"
 
 
-def split_lines(draw, text, fnt, width):
-    """Greedy wrap: pack as many words per line as fit."""
-    out = []
-    current = ""
+def font(path, size):
+    return ImageFont.truetype(path, size)
+
+
+def wrap(draw, text, fnt, max_w):
+    """Greedy word wrap; returns a list of lines that fit max_w."""
+    lines, cur = [], ""
     for word in text.split():
-        trial = (current + " " + word).strip()
-        if draw.textlength(trial, font=fnt) <= width:
-            current = trial
+        trial = word if not cur else cur + " " + word
+        if draw.textlength(trial, font=fnt) <= max_w:
+            cur = trial
         else:
-            if current:
-                out.append(current)
-            current = word
-    if current:
-        out.append(current)
-    return out
+            if cur:
+                lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+    return lines
 
 
-def para(draw, xy, text, fnt, width, leading, color=INK):
-    """Draw a wrapped paragraph; return the y just below it."""
-    x, y = xy
-    for line in split_lines(draw, text, fnt, width):
+def para(draw, x, y, text, fnt, max_w, leading, color=INK):
+    """Draw a wrapped paragraph; returns the y just below the last line."""
+    for line in wrap(draw, text, fnt, max_w):
         draw.text((x, y), line, font=fnt, fill=color)
         y += leading
     return y
 
 
-def headline_block(draw, x, y, width, kicker, head, head_size, body,
-                   body_size, kicker_color=SCARLET):
-    """A kicker, a wrapped headline and a wrapped body paragraph."""
-    draw.text((x, y), kicker, font=SANS_XB(20), fill=kicker_color)
-    y += 30
-    y = para(draw, (x, y), head, SERIF_XB(head_size), width,
-             head_size + 8)
-    y += 6
-    y = para(draw, (x, y), body, SANS(body_size), width, body_size + 8)
-    return y
-
-
-def rocket(draw, cx, cy):
-    """A simple ascending rocket over a star field, in a navy panel."""
-    draw.rectangle((cx - 118, cy - 118, cx + 118, cy + 118), fill=NAVY)
-    for sx, sy in ((-88, -84), (-52, -96), (66, -88), (92, -52),
-                   (-96, 22), (88, 34), (-64, 78), (52, 92)):
-        draw.ellipse((cx + sx - 3, cy + sy - 3, cx + sx + 3, cy + sy + 3),
-                     fill=WHITE)
-    # body
-    draw.polygon([(cx, cy - 92), (cx + 26, cy - 44), (cx + 26, cy + 34),
-                  (cx - 26, cy + 34), (cx - 26, cy - 44)], fill=WHITE)
-    draw.polygon([(cx, cy - 92), (cx + 26, cy - 44), (cx - 26, cy - 44)],
-                 fill=SCARLET)
-    draw.ellipse((cx - 11, cy - 52, cx + 11, cy - 30), fill=NAVY)
+def draw_rocket(draw, bx, by, bw, bh):
+    """A small stylised rocket on a navy sky, inside box (bx, by, bw, bh)."""
+    draw.rectangle([bx, by, bx + bw, by + bh], fill=NAVY_LIGHT)
+    cx = bx + bw // 2
+    # stars
+    for sx, sy, r in [(30, 30, 4), (70, 55, 3), (bw - 40, 35, 4),
+                      (bw - 70, 90, 3), (45, bh - 45, 3), (bw - 45, bh - 30, 4),
+                      (bw // 2 - 90, 70, 3)]:
+        draw.ellipse([bx + sx - r, by + sy - r, bx + sx + r, by + sy + r],
+                     fill=(255, 255, 255))
+    top = by + 28
+    body_w, body_h = 74, 118
+    x0, x1 = cx - body_w // 2, cx + body_w // 2
+    y0, y1 = top + 34, top + 34 + body_h
     # fins
-    draw.polygon([(cx - 26, cy + 10), (cx - 52, cy + 52), (cx - 26, cy + 40)],
-                 fill=SCARLET)
-    draw.polygon([(cx + 26, cy + 10), (cx + 52, cy + 52), (cx + 26, cy + 40)],
-                 fill=SCARLET)
+    draw.polygon([(x0, y1 - 52), (x0 - 34, y1 + 6), (x0, y1 - 6)], fill=RED)
+    draw.polygon([(x1, y1 - 52), (x1 + 34, y1 + 6), (x1, y1 - 6)], fill=RED)
+    # body and nose cone
+    draw.rectangle([x0, y0, x1, y1], fill=(255, 255, 255))
+    draw.polygon([(x0, y0), (x1, y0), (cx, top)], fill=RED)
+    # window
+    draw.ellipse([cx - 13, y0 + 26, cx + 13, y0 + 52], fill=NAVY)
     # flame
-    draw.polygon([(cx - 16, cy + 36), (cx + 16, cy + 36), (cx, cy + 92)],
-                 fill=GOLD)
-    draw.polygon([(cx - 8, cy + 36), (cx + 8, cy + 36), (cx, cy + 66)],
-                 fill=SCARLET)
+    draw.polygon([(cx - 16, y1), (cx + 16, y1), (cx, y1 + 52)], fill=GOLD)
+    draw.polygon([(cx - 8, y1), (cx + 8, y1), (cx, y1 + 30)], fill=RED)
 
 
-def paint():
-    img = Image.new("RGB", CANVAS, NEWS)
+def build():
+    img = Image.new("RGB", (W, H), CREAM)
     d = ImageDraw.Draw(img)
 
-    # --- masthead ------------------------------------------------------
-    d.rectangle((0, 0, 1024, 116), fill=NAVY)
-    d.text((36, 26), "THE WORLD TODAY", font=SERIF_XB(58), fill=WHITE)
-    d.text((700, 30), "WEDNESDAY", font=SANS_XB(30), fill=WHITE)
-    d.text((700, 68), "25 NOVEMBER 2026", font=SANS_B(24),
-           fill=(196, 205, 224))
-    d.rectangle((0, 116, 1024, 124), fill=SCARLET)
+    # ---- masthead ------------------------------------------------------
+    d.rectangle([0, 0, W, 110], fill=NAVY)
+    d.text((36, 30), "THE WORLD TODAY",
+           font=font(SERIF, 52), fill=(255, 255, 255))
+    d.text((988, 24), "WEDNESDAY", font=font(SANS_BOLD, 32),
+           fill=(255, 255, 255), anchor="ra")
+    d.text((988, 62), "25 NOVEMBER 2026", font=font(SANS_BOLD, 24),
+           fill=(200, 205, 220), anchor="ra")
+    d.rectangle([0, 110, W, 118], fill=RED)
 
-    # --- lead story ----------------------------------------------------
-    y = 148
-    d.text((36, y), "LEAD  ·  SPACE", font=SANS_XB(20), fill=SCARLET)
-    y += 32
-    y = para(d, (36, y), "Pakistan's first astronaut reaches orbit",
-             SERIF_XB(42), 640, 50)
-    y += 10
-    lead_body = ("China's Shenzhou-24 lifted off at 08:18 on Wednesday "
-                 "carrying Tang Hongbo, Wu Yi and Pakistani payload "
-                 "specialist Muhammad Zeeshan Ali — the first Pakistani "
-                 "in orbit and the first foreign astronaut aboard the "
-                 "Tiangong station.")
-    y = para(d, (36, y), lead_body, SANS(23), 640, 31)
-    rocket(d, 852, 268)
-    d.text((742, 398), "Shenzhou-24 to Tiangong",
-           font=SANS_B(17), fill=STEEL)
+    # ---- lead story ----------------------------------------------------
+    d.text((36, 142), "LEAD  \u00b7  SPACE", font=font(SANS_BOLD, 21),
+           fill=RED)
+    d.text((36, 172), "Pakistan's first astronaut",
+           font=font(SERIF, 46), fill=INK)
+    d.text((36, 224), "reaches orbit",
+           font=font(SERIF, 46), fill=INK)
+    lead_body = (
+        "China's Shenzhou-24 lifted off at 08:18 on Wednesday carrying "
+        "Tang Hongbo, Wu Yi and Pakistani payload specialist Muhammad "
+        "Zeeshan Ali \u2014 the first Pakistani in orbit and the first "
+        "foreign astronaut aboard Tiangong.")
+    para(d, 36, 292, lead_body, font(SANS, 23), 622, 32)
 
-    # --- divider -------------------------------------------------------
-    d.line((36, 448, 988, 448), fill=RULE, width=2)
+    draw_rocket(d, 700, 142, 288, 216)
+    d.text((700, 368), "Shenzhou-24 to Tiangong",
+           font=font(SANS_ITALIC, 19), fill=(70, 80, 105))
 
-    # --- two columns ---------------------------------------------------
-    headline_block(
-        d, 36, 470, 452,
-        "BUSINESS  ·  UNITED STATES",
-        "Huawei convicted in US trial — 10 of 12 counts",
-        30,
-        "A Brooklyn jury found the Chinese telecom giant guilty of "
-        "bank fraud and trade-secret theft on Tuesday, but cleared it "
-        "of racketeering. Sentencing is set for September 2027.",
-        21)
-    headline_block(
-        d, 536, 470, 452,
-        "MIDDLE EAST  ·  SAUDI ARABIA",
-        "Houthis hit Riyadh's tallest tower",
-        30,
+    d.line([(36, 442), (988, 442)], fill=(190, 180, 160), width=2)
+
+    # ---- two middle stories --------------------------------------------
+    col_y = 462
+    d.text((36, col_y), "BUSINESS  \u00b7  UNITED STATES",
+           font=font(SANS_BOLD, 20), fill=RED)
+    d.text((36, col_y + 28), "Huawei convicted in US",
+           font=font(SERIF, 30), fill=INK)
+    d.text((36, col_y + 64), "trial \u2014 10 of 12 counts",
+           font=font(SERIF, 30), fill=INK)
+    huawei = (
+        "A Brooklyn jury found the telecom giant guilty of bank fraud "
+        "and trade-secret theft on Tuesday, but cleared it of "
+        "racketeering. Sentencing is September 2027.")
+    para(d, 36, col_y + 112, huawei, font(SANS, 21), 448, 30)
+
+    d.text((520, col_y), "MIDDLE EAST  \u00b7  SAUDI ARABIA",
+           font=font(SANS_BOLD, 20), fill=RED)
+    d.text((520, col_y + 28), "Houthis hit Riyadh's",
+           font=font(SERIF, 30), fill=INK)
+    d.text((520, col_y + 64), "tallest tower",
+           font=font(SERIF, 30), fill=INK)
+    houthi = (
         "At least 11 people were wounded on Tuesday in the second "
         "strike on the capital's tallest tower in under a week, Saudi "
-        "Civil Defense said.",
-        21)
+        "Civil Defense said.")
+    para(d, 520, col_y + 118, houthi, font(SANS, 22), 468, 31)
 
-    # --- divider -------------------------------------------------------
-    d.line((36, 724, 988, 724), fill=RULE, width=2)
+    d.line([(36, 706), (988, 706)], fill=(190, 180, 160), width=2)
 
-    # --- Zelenskiy strip ----------------------------------------------
-    d.rectangle((36, 742, 988, 856), fill=MIST)
-    d.rectangle((36, 742, 46, 856), fill=SCARLET)
-    d.text((66, 758), "UKRAINE  ·  TUESDAY", font=SANS_XB(19), fill=SCARLET)
-    para(d, (66, 784), "Zelenskiy confirms Ukraine hit Russian ship",
-         SERIF_XB(29), 890, 36)
-    d.text((66, 824),
-           "Kyiv owns Saturday's drone strike on a Russian cargo ship in "
-           "the Gulf of Finland; Norway urges caution.",
-           font=SANS(19), fill=INK)
+    # ---- Ukraine strip ---------------------------------------------------
+    d.rectangle([36, 724, 988, 838], fill=STRIP_BG)
+    d.rectangle([36, 724, 50, 838], fill=RED)
+    d.text((70, 738), "UKRAINE  \u00b7  TUESDAY",
+           font=font(SANS_BOLD, 20), fill=RED)
+    d.text((70, 766), "Zelenskiy confirms Ukraine hit Russian ship",
+           font=font(SERIF, 30), fill=INK)
+    strip_body = (
+        "Kyiv owns Saturday's drone strike on a Russian cargo ship in "
+        "the Gulf of Finland.")
+    para(d, 70, 806, strip_body, font(SANS, 19), 900, 26)
 
-    # --- ticker --------------------------------------------------------
-    d.rectangle((0, 884, 1024, 972), fill=NAVY)
-    ticker = ("Giuliani gets Medal of Freedom  •  Sarkozy case to trial  •  "
-              "CIA and ODNI hit by cyber breach  •  Nepal quake 5.6  •  "
-              "Chess title match: Game 1 drawn 0.5-0.5  •  "
-              "AIDS deaths 570,000 in 2025, lowest in 20+ years  •  "
-              "Nasdaq -1.5%, Nvidia -6%  •  Cartagena: 25 hostages held")
-    para(d, (28, 896), ticker, SANS_B(19), 968, 27, color=WHITE)
+    # ---- ticker ----------------------------------------------------------
+    d.rectangle([0, 856, W, 972], fill=NAVY)
+    ticker = (
+        "Giuliani gets Medal of Freedom \u00b7 Sarkozy case to trial "
+        "\u00b7 CIA and ODNI hit by cyber breach \u00b7 Nepal quake 5.6 "
+        "\u00b7 Chess title match: Game 1 drawn \u00b7 AIDS deaths "
+        "570,000 in 2025, lowest in 20+ years \u00b7 Nasdaq -1.5%, "
+        "Nvidia -6% \u00b7 Cartagena: 25 hostages held")
+    para(d, 28, 864, ticker, font(SANS_BOLD, 19), 968, 27,
+         color=(255, 255, 255))
 
-    # --- footer --------------------------------------------------------
+    # ---- footer ----------------------------------------------------------
     d.text((36, 986),
            "Stories verified against Reuters, Xinhua, BBC, ChessBase and "
-           "UNAIDS  ·  Wednesday, 25 November 2026",
-           font=SANS(15), fill=STEEL)
+           "UNAIDS  \u00b7  Wednesday, 25 November 2026",
+           font=font(SANS, 17), fill=GREY)
     return img
 
 
 if __name__ == "__main__":
-    paint().save("entry.png", optimize=True)
-    print("wrote entry.png")
+    import os
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "entry.png")
+    build().save(out, "PNG")
+    print("wrote", out)
